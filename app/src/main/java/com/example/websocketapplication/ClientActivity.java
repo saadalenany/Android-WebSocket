@@ -30,6 +30,7 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
     private static final String SERVER_IP = "192.168.1.4";
 
     private WebSocket ws = null;
+    private String username = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,15 +75,10 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
         }
         TextView tv = new TextView(this);
         tv.setTextColor(ContextCompat.getColor(this, R.color.blue));
-        tv.setText(message + " [" + getTime() + "]");
+        tv.setText(username+" "+message);
         tv.setTextSize(10);
         tv.setPadding(0, 5, 0, 0);
         return tv;
-    }
-
-    private String getTime() {
-        @SuppressLint("SimpleDateFormat") SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss");
-        return sdf.format(new Date());
     }
 
     public void onStart(View view) {
@@ -99,6 +95,7 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
 
         AsyncTaskRunner runner = new AsyncTaskRunner(uri);
         runner.execute();
+        this.username = username;
     }
 
     @Override
