@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">WebSocketApplication</string>
+    <string name="message_from_server">Message from Server</string>
+    <string name="start_server">Start Server</string>
+    <string name="send_message_to_client">Send Message to Client</string>
+    <string name="send_message_to_server">Send Message to server</string>
+    <string name="message_from_client">Message from Client</string>
+    <string name="connect_to_server">Connect to server</string>
+    <string name="login">Login</string>
+    <string name="enter_your_username_to_login">Enter your username to login</string>
+</resources>
