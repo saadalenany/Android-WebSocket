@@ -2,24 +2,26 @@ package com.example.websocketapplication;
 
 import android.annotation.SuppressLint;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Bundle;
+import android.support.annotation.Nullable;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.text.Html;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import com.neovisionaries.ws.client.WebSocket;
-import com.neovisionaries.ws.client.WebSocketAdapter;
-import com.neovisionaries.ws.client.WebSocketException;
-import com.neovisionaries.ws.client.WebSocketFactory;
 
-import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import com.google.gson.Gson;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
 
 public class ClientActivity extends AppCompatActivity implements DialogCallback {
 
@@ -31,6 +33,7 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
 
     private WebSocket ws = null;
     private String username = "";
+    private boolean isConnected = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,41 +46,70 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
     }
 
     public void onClick(View view) {
-        if (ws.isOpen()) {
-            ws.sendText(edMessage.getText().toString());
+        ChatMessage chatMessage = new ChatMessage(ChatMessage.MessageType.CHAT, edMessage.getText().toString(), username);
+        if (ws != null && isConnected) {
+            Gson gson = new Gson();
+            Log.d(this.getClass().getSimpleName(), "onClick: " + gson.toJson(chatMessage));
+            ws.send(gson.toJson(chatMessage));
+            output(chatMessage);
         } else {
-            output("You're not connected...");
+            chatMessage.setContent("You're not connected...");
+            output(chatMessage);
         }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (ws != null) {
-            ws.disconnect();
+        if (ws != null && isConnected) {
+            ws.close(0, "Application destroyed");
             ws = null;
         }
     }
 
-    private void output(final String txt) {
+    private void output(final ChatMessage chatMessage) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                msgList.addView(textView(txt));
+                msgList.addView(textView(chatMessage));
             }
         });
     }
 
-    @SuppressLint("SetTextI18n")
-    private TextView textView(String message) {
+    @SuppressLint({"SetTextI18n", "RtlHardcoded"})
+    private TextView textView(ChatMessage chatMessage) {
+        String message = chatMessage.getContent();
         if (null == message || message.trim().isEmpty()) {
             message = "<Empty Message>";
         }
         TextView tv = new TextView(this);
-        tv.setTextColor(ContextCompat.getColor(this, R.color.blue));
-        tv.setText(username+" "+message);
-        tv.setTextSize(10);
-        tv.setPadding(0, 5, 0, 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        tv.setLayoutParams(params);
+        String srcStr;
+        if (chatMessage.getType().equals(ChatMessage.MessageType.JOIN)) {
+            srcStr = "<b>" + chatMessage.getSender() + "</b> joined.";
+            tv.setTextSize(10);
+            tv.setTextColor(ContextCompat.getColor(this, R.color.yellow));
+            tv.setGravity(Gravity.CENTER);
+        } else if (chatMessage.getType().equals(ChatMessage.MessageType.LEAVE)) {
+            srcStr = "<b>" + chatMessage.getSender() + "</b> left.";
+            tv.setTextSize(10);
+            tv.setTextColor(ContextCompat.getColor(this, R.color.red));
+            tv.setGravity(Gravity.CENTER);
+        } else {
+            if (username.equals(chatMessage.getSender())) {
+                tv.setTextSize(15);
+                tv.setTextColor(ContextCompat.getColor(this, R.color.green));
+                tv.setGravity(Gravity.LEFT);
+            } else {
+                tv.setTextSize(15);
+                tv.setTextColor(ContextCompat.getColor(this, R.color.blue));
+                tv.setGravity(Gravity.RIGHT);
+            }
+            srcStr = "<b>" + chatMessage.getSender() + "</b> " + message;
+        }
+        tv.setText(Html.fromHtml(srcStr));
+        tv.setPadding(0, 5, 0, 5);
         return tv;
     }
 
@@ -87,14 +119,18 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
         loginDialogFragment.show(fm, "Connect to Server");
     }
 
-    private void connectToServer(final String username){
-        Uri.Builder uriBuilder = Uri.parse(String.format("ws://%s:%s/doLogin",SERVER_IP,SERVER_PORT)).buildUpon();
-        uriBuilder.appendQueryParameter("username",username);
+    private void connectToServer(final String username) {
+        Uri.Builder uriBuilder = Uri.parse(String.format("ws://%s:%s/doLogin", SERVER_IP, SERVER_PORT)).buildUpon();
+        uriBuilder.appendQueryParameter("username", username);
 
         String uri = uriBuilder.build().toString();
+        Log.d(this.getClass().getSimpleName(), "connectToServer: URI " + uri);
 
-        AsyncTaskRunner runner = new AsyncTaskRunner(uri);
-        runner.execute();
+        final OkHttpClient client = new OkHttpClient();
+        final Request request = new Request.Builder().url(uri).build();
+
+        SocketListener socketListener = new SocketListener();
+        ws = client.newWebSocket(request, socketListener);
         this.username = username;
     }
 
@@ -103,57 +139,48 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
         connectToServer(data);
     }
 
-    @SuppressLint("StaticFieldLeak")
-    private class AsyncTaskRunner extends AsyncTask<Void, Void, String> {
-
-        String uri;
-        AsyncTaskRunner(String uri) {
-            this.uri = uri;
+    private class SocketListener extends WebSocketListener {
+        @Override
+        public void onOpen(WebSocket webSocket, Response response) {
+            super.onOpen(webSocket, response);
+            Log.d(this.getClass().getSimpleName(), "onOpen: Connection Opened");
+            output(new ChatMessage(ChatMessage.MessageType.JOIN, "", username));
+            isConnected = true;
         }
 
         @Override
-        protected String doInBackground(Void... params) {
-            String returnedResult = "Connection Error";
-            // Create a WebSocket factory and set 5000 milliseconds as a timeout
-            // value for socket connection.
-            WebSocketFactory factory = new WebSocketFactory().setConnectionTimeout(5000);
+        public void onMessage(WebSocket webSocket, String text) {
+            super.onMessage(webSocket, text);
 
-            // Create a WebSocket. The timeout value set above is used.
-            try {
-                ws = factory.createSocket(uri).connect();
-                if (!ws.isOpen()) {
-                    returnedResult = "Connection failed";
-                    output("Connection Failed...");
-                } else {
-                    returnedResult = "Connection successful";
-                    output("Connection successful...");
-                }
-
-                ws.addListener(new WebSocketAdapter() {
-                    @Override
-                    public void onTextMessage(WebSocket websocket, String message) throws Exception {
-                        Log.d("onTextMessage", message);
-                        output(message);
-                    }
-                });
-
-                ws.connectAsynchronously();
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (WebSocketException e) {
-                e.printStackTrace();
-            }
-            return returnedResult;
+            Gson gson = new Gson();
+            ChatMessage chatMessage = gson.fromJson(text, ChatMessage.class);
+            Log.d(this.getClass().getSimpleName(), "onMessage: " + text);
+            output(chatMessage);
         }
 
         @Override
-        protected void onPostExecute(String result) {
-            Log.d("AsyncTask",result);
+        public void onClosing(WebSocket webSocket, int code, String reason) {
+            super.onClosing(webSocket, code, reason);
+            Log.d(this.getClass().getSimpleName(), "onClosing");
         }
 
         @Override
-        protected void onPreExecute() {
-            Log.d("AsyncTask","Initiating Connection...");
+        public void onClosed(WebSocket webSocket, int code, String reason) {
+            super.onClosed(webSocket, code, reason);
+            Log.d(this.getClass().getSimpleName(), "onClosed");
+            output(new ChatMessage(ChatMessage.MessageType.LEAVE, "", username));
+            username = "";
+            isConnected = false;
+        }
+
+        @Override
+        public void onFailure(WebSocket webSocket, Throwable t, @Nullable Response response) {
+            super.onFailure(webSocket, t, response);
+            Log.d(this.getClass().getSimpleName(), "onFailure");
+            Log.e(this.getClass().getSimpleName(), "Throwable: " + t.getMessage());
+            t.printStackTrace();
+            username = "";
+            isConnected = false;
         }
     }
 }
