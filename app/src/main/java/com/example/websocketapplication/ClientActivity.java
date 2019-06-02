@@ -120,8 +120,7 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
     }
 
     private void connectToServer(final String username) {
-        Uri.Builder uriBuilder = Uri.parse(String.format("ws://%s:%s/doLogin", SERVER_IP, SERVER_PORT)).buildUpon();
-        uriBuilder.appendQueryParameter("username", username);
+        Uri.Builder uriBuilder = Uri.parse(String.format("ws://%s:%s/ws/websocket", SERVER_IP, SERVER_PORT)).buildUpon();
 
         String uri = uriBuilder.build().toString();
         Log.d(this.getClass().getSimpleName(), "connectToServer: URI " + uri);
@@ -179,7 +178,6 @@ public class ClientActivity extends AppCompatActivity implements DialogCallback 
             Log.d(this.getClass().getSimpleName(), "onFailure");
             Log.e(this.getClass().getSimpleName(), "Throwable: " + t.getMessage());
             t.printStackTrace();
-            username = "";
             isConnected = false;
         }
     }
